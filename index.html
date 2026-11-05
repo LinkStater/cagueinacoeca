@@ -1,321 +1,277 @@
 
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-
-    <title>Controle do Kart</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Controle Kart</title>
 
     <style>
         * {
             box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-            -webkit-user-select: none;
             user-select: none;
-            -webkit-touch-callout: none;
-        }
-
-        html, body {
-            margin: 0;
-            height: 100%;
-            background: #111;
-            color: #fff;
-            font-family: system-ui, sans-serif;
+            -webkit-user-select: none;
             touch-action: none;
-            overflow: hidden;
         }
 
         body {
+            margin: 0;
+            background: #151515;
+            color: white;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100vw;
+            height: 100dvh;
             display: flex;
             flex-direction: column;
-            padding: 12px;
-            gap: 12px;
+            justify-content: space-between;
+            padding: 20px;
         }
 
-        #topo {
+        .status {
+            text-align: center;
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        .dashboard {
+            text-align: center;
+        }
+
+        #steerEl {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 10px;
+        }
+
+        .buttons {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            font-size: 16px;
+            align-items: end;
+            gap: 20px;
         }
 
-        #status.ok { color: #4caf50; }
-        #status.erro { color: #ff5252; }
-
-        #sensor {
-            padding: 10px 16px;
-            font-size: 16px;
-            border: 0;
-            border-radius: 8px;
-            background: #2196f3;
-            color: #fff;
+        button {
+            width: 45%;
+            height: 130px;
+            border: none;
+            border-radius: 20px;
+            color: white;
+            font-size: 25px;
+            font-weight: bold;
+            opacity: 0.85;
         }
 
-        #barra {
-            height: 14px;
-            background: #333;
-            border-radius: 7px;
-            position: relative;
+        button:active {
+            opacity: 1;
+            transform: scale(0.97);
         }
 
-        #ponteiro {
-            position: absolute;
-            top: -3px;
-            left: 50%;
-            width: 20px;
-            height: 20px;
-            margin-left: -10px;
-            border-radius: 50%;
-            background: #ffc107;
+        #gas {
+            background: #168b36;
         }
 
-        #botoes {
-            flex: 1;
-            display: flex;
-            gap: 12px;
-        }
-
-        .botao {
-            flex: 1;
-            border: 0;
-            border-radius: 16px;
-            font-size: 28px;
-            font-weight: 700;
-            color: #fff;
-            touch-action: none;
-        }
-
-        #brake { background: #c62828; }
-        #gas { background: #2e7d32; }
-
-        .botao.ativo {
-            filter: brightness(1.5);
+        #brake {
+            background: #c62828;
         }
     </style>
 </head>
 
 <body>
 
-    <div id="topo">
-        <span id="status" class="erro">Conectando...</span>
-        <span id="steer">Volante: 0.00</span>
-        <button id="sensor">Ativar sensor</button>
+<div class="container">
+
+    <div class="status" id="status">
+        Conectando...
     </div>
 
-    <div id="barra">
-        <div id="ponteiro"></div>
+    <div class="dashboard">
+        <div>DIREÇÃO</div>
+        <div id="steerEl">0.00</div>
+        <div id="sensorInfo">Aguardando sensor...</div>
     </div>
 
-    <div id="botoes">
-        <button id="brake" class="botao">FREIO</button>
-        <button id="gas" class="botao">ACELERAR</button>
+    <div class="buttons">
+        <button id="brake">FREIO</button>
+        <button id="gas">ACELERAR</button>
     </div>
 
-    <script>
+</div>
 
-        // =====================================
-        // SERVIDOR
-        // =====================================
+<script>
+    // ==============================
+    // WEBSOCKET
+    // ==============================
 
-        function urlDoServidor() {
-            const parametro = new URLSearchParams(location.search).get('server');
+    const params = new URLSearchParams(window.location.search);
 
-            if (parametro) return parametro;
+    const servidor = params.get('server') ||
+        `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
 
-            const protocolo = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    let ws;
 
-            return protocolo + location.host;
+    const statusEl = document.getElementById('status');
+
+    function conectar() {
+        ws = new WebSocket(servidor);
+
+        ws.onopen = () => {
+            statusEl.innerText = 'CONECTADO';
+            statusEl.style.color = '#00ff66';
+        };
+
+        ws.onclose = () => {
+            statusEl.innerText = 'DESCONECTADO';
+            statusEl.style.color = '#ff4444';
+
+            setTimeout(conectar, 2000);
+        };
+
+        ws.onerror = () => {
+            statusEl.innerText = 'ERRO DE CONEXÃO';
+        };
+    }
+
+    conectar();
+
+
+    // ==============================
+    // CONTROLES
+    // ==============================
+
+    let steer = 0;
+    let gas = 0;
+    let brake = 0;
+
+
+    // ==============================
+    // INCLINAÇÃO DO CELULAR
+    // ==============================
+
+    function aoInclinar(event) {
+
+        if (event.beta === null) return;
+
+        const angulo = screen.orientation
+            ? screen.orientation.angle
+            : (window.orientation || 0);
+
+        let inclinacao = event.beta;
+
+        // Corrige o sentido conforme a rotação da tela
+        if (angulo === 270 || angulo === -90) {
+            inclinacao = -event.beta;
         }
 
-        const statusEl = document.getElementById('status');
-        const steerEl = document.getElementById('steer');
-        const ponteiro = document.getElementById('ponteiro');
-        const barra = document.getElementById('barra');
-        const sensorBtn = document.getElementById('sensor');
+        steer = Math.max(-1, Math.min(1, inclinacao / 45));
 
-        let socket = null;
+        document.getElementById('steerEl').innerText =
+            steer.toFixed(2);
 
-        let steer = 0;
-        let gas = 0;
-        let brake = 0;
-
-        function mostrarStatus(texto, ok) {
-            statusEl.innerText = texto;
-            statusEl.className = ok ? 'ok' : 'erro';
-        }
-
-        function conectar() {
-            socket = new WebSocket(urlDoServidor());
-
-            socket.onopen = () => {
-                mostrarStatus('Conectado!', true);
-            };
-
-            socket.onclose = () => {
-                mostrarStatus('Desconectado, tentando de novo...', false);
-                setTimeout(conectar, 2000);
-            };
-
-            socket.onerror = () => {
-                socket.close();
-            };
-        }
-
-        conectar();
+        document.getElementById('sensorInfo').innerText =
+            `Beta: ${event.beta.toFixed(1)} | Tela: ${angulo}°`;
+    }
 
 
-        // =====================================
-        // SENSOR DE INCLINAÇÃO
-        // =====================================
+    // ==============================
+    // PERMISSÃO DO SENSOR
+    // ==============================
 
-        function aoInclinar(event) {
+    async function iniciarSensor() {
 
-            if (event.gamma === null || event.beta === null)
-                return;
+        try {
+            if (
+                typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function'
+            ) {
+                const permissao =
+                    await DeviceOrientationEvent.requestPermission();
 
-            const angulo = screen.orientation
-                ? screen.orientation.angle
-                : (window.orientation || 0);
-
-            let inclinacao;
-
-            if (angulo === 90) {
-                inclinacao = event.beta;
-            }
-            else if (angulo === -90 || angulo === 270) {
-                inclinacao = -event.beta;
-            }
-            else {
-                inclinacao = event.gamma;
-            }
-
-            steer = Math.max(-1, Math.min(1, inclinacao / 45));
-
-            steerEl.innerText = 'Volante: ' + steer.toFixed(2);
-
-            const largura = barra.clientWidth / 2 - 10;
-
-            ponteiro.style.transform =
-                'translateX(' + steer * largura + 'px)';
-        }
-
-
-        // =====================================
-        // ATIVAR SENSOR
-        // =====================================
-
-        async function ativarSensor() {
-
-            if (!window.isSecureContext) {
-                mostrarStatus('O sensor só funciona em HTTPS.', false);
-                return;
-            }
-
-            try {
-
-                if (
-                    typeof DeviceOrientationEvent !== 'undefined' &&
-                    typeof DeviceOrientationEvent.requestPermission === 'function'
-                ) {
-
-                    const resposta =
-                        await DeviceOrientationEvent.requestPermission();
-
-                    if (resposta !== 'granted') {
-                        mostrarStatus('Permissão do sensor negada', false);
-                        return;
-                    }
+                if (permissao !== 'granted') {
+                    alert('Permissão do sensor negada.');
+                    return;
                 }
-
-                window.addEventListener(
-                    'deviceorientation',
-                    aoInclinar
-                );
-
-                sensorBtn.style.display = 'none';
-
-                mostrarStatus('Sensor ativado!', true);
-
-                if (navigator.wakeLock) {
-                    navigator.wakeLock.request('screen').catch(() => {});
-                }
-
-            } catch (erro) {
-
-                mostrarStatus('Não foi possível ativar o sensor', false);
-
-                console.error(erro);
-            }
-        }
-
-        sensorBtn.addEventListener('click', ativarSensor);
-
-
-        // =====================================
-        // BOTÕES
-        // =====================================
-
-        function ligarBotao(id, aoMudar) {
-
-            const botao = document.getElementById(id);
-
-            const apertar = (e) => {
-                e.preventDefault();
-
-                botao.classList.add('ativo');
-
-                aoMudar(1);
-            };
-
-            const soltar = () => {
-
-                botao.classList.remove('ativo');
-
-                aoMudar(0);
-            };
-
-            botao.addEventListener('pointerdown', apertar);
-            botao.addEventListener('pointerup', soltar);
-            botao.addEventListener('pointerleave', soltar);
-            botao.addEventListener('pointercancel', soltar);
-
-            botao.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-            });
-        }
-
-        ligarBotao('gas', (v) => {
-            gas = v;
-        });
-
-        ligarBotao('brake', (v) => {
-            brake = v;
-        });
-
-
-        // =====================================
-        // ENVIO CONTÍNUO
-        // =====================================
-
-        setInterval(() => {
-
-            if (socket && socket.readyState === WebSocket.OPEN) {
-
-                socket.send(JSON.stringify({
-                    type: 'input',
-                    steer: steer,
-                    gas: gas,
-                    brake: brake
-                }));
-
             }
 
-        }, 33);
+            window.addEventListener('deviceorientation', aoInclinar);
 
-    </script>
+        } catch (erro) {
+            console.error('Erro no sensor:', erro);
+        }
+    }
+
+    iniciarSensor();
+
+
+    // ==============================
+    // ACELERADOR
+    // ==============================
+
+    const gasButton = document.getElementById('gas');
+
+    gasButton.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        gas = 1;
+    });
+
+    gasButton.addEventListener('pointerup', () => {
+        gas = 0;
+    });
+
+    gasButton.addEventListener('pointerleave', () => {
+        gas = 0;
+    });
+
+    gasButton.addEventListener('pointercancel', () => {
+        gas = 0;
+    });
+
+
+    // ==============================
+    // FREIO
+    // ==============================
+
+    const brakeButton = document.getElementById('brake');
+
+    brakeButton.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        brake = 1;
+    });
+
+    brakeButton.addEventListener('pointerup', () => {
+        brake = 0;
+    });
+
+    brakeButton.addEventListener('pointerleave', () => {
+        brake = 0;
+    });
+
+    brakeButton.addEventListener('pointercancel', () => {
+        brake = 0;
+    });
+
+
+    // ==============================
+    // ENVIO DOS INPUTS
+    // ==============================
+
+    setInterval(() => {
+
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+        ws.send(JSON.stringify({
+            type: 'input',
+            steer: steer,
+            gas: gas,
+            brake: brake
+        }));
+
+    }, 33);
+
+</script>
 
 </body>
 </html>
